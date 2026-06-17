@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Researcher Profile Graph</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f7f7f4;
+      color: #1f2933;
+    }
+
+    header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #ddd;
+      background: #fff;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      width: 100vw;
+      height: calc(100vh - 57px);
+    }
+
+    #graph {
+      width: 100%;
+      height: 100%;
+    }
+
+    aside {
+      border-left: 1px solid #ddd;
+      background: #fff;
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .muted {
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .detail-title {
+      margin: 0 0 4px;
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .detail-type {
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+
+    .detail-section {
+      border-top: 1px solid #e5e7eb;
+      margin-top: 12px;
+      padding-top: 12px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .node circle {
+      stroke: #fff;
+      stroke-width: 2px;
+      cursor: pointer;
+    }
+
+    .node text {
+      font-size: 12px;
+      fill: #111827;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 3px;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+
+    line {
+      stroke: #9ca3af;
+      stroke-width: 1.6px;
+      cursor: pointer;
+    }
+
+    line.selected {
+      stroke: #111827;
+      stroke-width: 3px;
+    }
+
+    .node.selected circle {
+      stroke: #111827;
+      stroke-width: 3px;
+    }
+
+    .edge-label {
+      font-size: 11px;
+      fill: #374151;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 3px;
+      stroke-linejoin: round;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Researcher Profile Graph</h1>
+  </header>
+
+  <main>
+    <svg id="graph"></svg>
+    <aside id="details">
+      <p class="muted">Click a node or relationship to inspect confidence and citations.</p>
+    </aside>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script>
+    const GRAPH_PATH = "outputs/natalia_efremova_profile_graph.json";
+
+    const nodeColors = {
+      Person: "#2563eb",
+      ResearchTopic: "#059669",
+      Project: "#d97706",
+      Institution: "#dc2626",
+      Publication: "#0891b2",
+      Opportunity: "#7c3aed"
+    };
+
+    const details = document.querySelector("#details");
+
+    async function loadGraph() {
+      const response = await fetch(GRAPH_PATH);
+      return response.json();
+    }
+
+    function renderGraph(graph) {
+      const svg = d3.select("#graph");
+      const bounds = document.querySelector("#graph").getBoundingClientRect();
+      const width = bounds.width;
+      const height = bounds.height;
+
+      svg.attr("viewBox", [0, 0, width, height]);
+
+      const links = graph.edges.map(edge => ({ ...edge }));
+      const nodes = graph.nodes.map(node => ({ ...node }));
+      const nodeById = new Map(nodes.map(node => [node.id, node]));
+
+      const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(node => node.id).distance(180))
+        .force("charge", d3.forceManyBody().strength(-650))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide().radius(58));
+
+      const link = svg.append("g")
+        .selectAll("line")
+        .data(links)
+        .join("line")
+        .on("click", (event, edge) => {
+          event.stopPropagation();
+          selectEdge(edge);
+        });
+
+      const edgeLabel = svg.append("g")
+        .selectAll("text")
+        .data(links)
+        .join("text")
+        .attr("class", "edge-label")
+        .text(edge => edge.type)
+        .on("click", (event, edge) => {
+          event.stopPropagation();
+          selectEdge(edge);
+        });
+
+      const node = svg.append("g")
+        .selectAll("g")
+        .data(nodes)
+        .join("g")
+        .attr("class", "node")
+        .on("click", (event, clickedNode) => {
+          event.stopPropagation();
+          selectNode(clickedNode);
+        })
+        .call(
+          d3.drag()
+            .on("start", dragStarted)
+            .on("drag", dragged)
+            .on("end", dragEnded)
+        );
+
+      node.append("circle")
+        .attr("r", node => node.type === "Person" ? 26 : 20)
+        .attr("fill", node => nodeColors[node.type] || "#6b7280");
+
+      node.append("text")
+        .attr("x", 28)
+        .attr("y", 4)
+        .text(node => node.name);
+
+      svg.on("click", () => {
+        clearSelection();
+        details.innerHTML = `<p class="muted">Click a node or relationship to inspect confidence and citations.</p>`;
+      });
+
+      simulation.on("tick", () => {
+        link
+          .attr("x1", edge => edge.source.x)
+          .attr("y1", edge => edge.source.y)
+          .attr("x2", edge => edge.target.x)
+          .attr("y2", edge => edge.target.y);
+
+        edgeLabel
+          .attr("x", edge => (edge.source.x + edge.target.x) / 2)
+          .attr("y", edge => (edge.source.y + edge.target.y) / 2);
+
+        node.attr("transform", node => `translate(${node.x},${node.y})`);
+      });
+
+      function clearSelection() {
+        link.classed("selected", false);
+        node.classed("selected", false);
+      }
+
+      function selectNode(clickedNode) {
+        clearSelection();
+
+        node.classed("selected", node => node.id === clickedNode.id);
+
+        details.innerHTML = `
+          <h2 class="detail-title">${escapeHtml(clickedNode.name)}</h2>
+          <div class="detail-type">${escapeHtml(clickedNode.type)}</div>
+          <div class="detail-section">
+            <strong>ID</strong><br>
+            ${escapeHtml(clickedNode.id)}
+          </div>
+          ${clickedNode.full_claim ? `
+            <div class="detail-section">
+              <strong>Full claim</strong><br>
+              ${escapeHtml(clickedNode.full_claim)}
+            </div>
+          ` : ""}
+        `;
+      }
+
+      function selectEdge(edge) {
+        clearSelection();
+
+        link.classed("selected", selectedEdge => selectedEdge === edge);
+
+        node.classed(
+          "selected",
+          selectedNode =>
+            selectedNode.id === edge.source.id ||
+            selectedNode.id === edge.target.id
+        );
+
+        const sourceNode = nodeById.get(edge.source.id);
+        const targetNode = nodeById.get(edge.target.id);
+        const citations = edge.citations || [];
+
+        details.innerHTML = `
+          <h2 class="detail-title">${escapeHtml(sourceNode.name)} → ${escapeHtml(targetNode.name)}</h2>
+          <div class="detail-type">${escapeHtml(edge.type)}</div>
+
+          <div class="detail-section">
+            <strong>Confidence</strong><br>
+            ${escapeHtml(String(edge.confidence ?? "unknown"))}
+          </div>
+
+          <div class="detail-section">
+            <strong>Citations</strong><br>
+            ${citations.length ? citations.map(escapeHtml).join("<br>") : "No citations"}
+          </div>
+
+          ${edge.rationale ? `
+            <div class="detail-section">
+              <strong>Rationale</strong><br>
+              ${escapeHtml(edge.rationale)}
+            </div>
+          ` : ""}
+        `;
+      }
+
+      function dragStarted(event, node) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        node.fx = node.x;
+        node.fy = node.y;
+      }
+
+      function dragged(event, node) {
+        node.fx = event.x;
+        node.fy = event.y;
+      }
+
+      function dragEnded(event, node) {
+        if (!event.active) simulation.alphaTarget(0);
+        node.fx = null;
+        node.fy = null;
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    loadGraph().then(renderGraph);
+  </script>
+</body>
+</html>
