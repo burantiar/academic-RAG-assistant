@@ -64,6 +64,26 @@ The system generates
 
 - interactive knowledge graph
 
+## Roadmap
+
+- [x] PDF ingestion
+
+- [x] RAG pipeline
+
+- [x] Knowledge graph
+
+- [ ] Streamlit interface
+
+- [ ] Multi-agent workflow
+
+- [ ] ORCID integration
+
+- [ ] Google Scholar integration
+
+- [ ] Semantic collaborator recommendation
+
+- [ ] Evaluation framework
+
 - evidence table
 
 - confidence score
